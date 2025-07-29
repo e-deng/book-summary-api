@@ -1,20 +1,31 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import openai
+import requests
 import os
 from dotenv import load_dotenv
-import requests
+import asyncio
+import websockets
 import json
+import logging
 
 # Load environment variables from .env file
 load_dotenv()
 
-# Set OpenAI API key from environment
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key or openai.api_key == "your-openai-api-key-here":
-    raise ValueError("Please set your OpenAI API key in the .env file")
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class BookRequest(BaseModel):
     book_name: str
@@ -23,72 +34,65 @@ class BookRequest(BaseModel):
 
 @app.post("/generate-summary")
 async def generate_summary(data: BookRequest):
-    # Get configuration from environment variables
-    model = os.getenv("OPENAI_MODEL", "gpt-4")
-    temperature = float(os.getenv("TEMPERATURE", "0.7"))
-    max_tokens = int(os.getenv("MAX_TOKENS", "1500"))
-    
-    # Deep research prompt for comprehensive analysis
-    prompt = f"""
-    Conduct a comprehensive deep research analysis of the book "{data.book_name}" by {data.author}, published on {data.publication_date}.
-    
-    Please provide:
-    1. **Detailed Summary**: Comprehensive overview of the plot, themes, and narrative structure
-    2. **Character Analysis**: Deep dive into main characters, their development, motivations, and relationships
-    3. **Thematic Exploration**: Analysis of major themes, symbolism, and underlying messages
-    5. **Literary Analysis**: Writing style, narrative techniques, and literary devices used
-    8. **Key Quotes**: Notable passages that exemplify the book's themes and style
-    9. **Discussion Points**: Thought-provoking questions and topics for deeper discussion
-    
-    Structure your response in a clear, organized manner with appropriate headings and sections.
     """
-
+    Generate a comprehensive book summary using GPT Researcher deep research.
+    
+    Parameters:
+    - book_name: Name of the book
+    - author: Author of the book  
+    - publication_date: Publication date of the book
+    
+    Returns: Text response with comprehensive book analysis
+    """
     try:
-        # Call GPT Researcher API
-        gpt_researcher_url = os.getenv("GPT_RESEARCHER_URL", "http://localhost:8000")
+        logger.info(f"🔗 Sending request to GPT Researcher for '{data.book_name}' by {data.author}")
         
-        # Prepare the request for GPT Researcher
-        researcher_request = {
-            "query": f"Book analysis: {data.book_name} by {data.author} ({data.publication_date})",
-            "report_type": "research_report",
-            "source_urls": [],
-            "custom_prompt": prompt
+        # Use the HTTP API endpoint
+        gpt_researcher_url = "http://localhost:8001/summarize"
+        
+        # Prepare the request payload
+        request_payload = {
+            "name": data.book_name,
+            "author": data.author,
+            "publication_date": data.publication_date
         }
         
-        # Make request to GPT Researcher
-        response = requests.post(
-            f"{gpt_researcher_url}/api/research",
-            json=researcher_request,
-            headers={"Content-Type": "application/json"},
-            timeout=1200  # 20 minute timeout for research
-        )
-        
-        if response.status_code == 200:
-            researcher_data = response.json()
-            # Extract the research text from GPT Researcher response
-            research_text = researcher_data.get("text", researcher_data.get("report", ""))
-            return research_text
-        else:
-            # Fallback to direct OpenAI call if GPT Researcher is not available
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-            result_text = response['choices'][0]['message']['content'].strip()
-            return result_text
-            
-    except Exception as e:
-        # Fallback to direct OpenAI call on any error
         try:
-            response = openai.ChatCompletion.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=temperature,
-                max_tokens=max_tokens
+            response = requests.post(
+                gpt_researcher_url,
+                json=request_payload,
+                timeout=1200,  # 20 minutes
+                headers={"Content-Type": "application/json"}
             )
-            result_text = response['choices'][0]['message']['content'].strip()
-            return result_text
-        except Exception as fallback_error:
-            return f"Error: {str(fallback_error)}" 
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"✅ Successfully generated research summary via GPT Researcher")
+                return result.get("summary", str(result))
+            else:
+                logger.error(f"❌ GPT Researcher returned status {response.status_code}")
+                return f"Error from GPT Researcher: HTTP {response.status_code}"
+                
+        except requests.exceptions.ConnectionError:
+            return "Could not connect to GPT Researcher. Make sure it's running on localhost:8001"
+        except requests.exceptions.Timeout:
+            return "Request to GPT Researcher timed out after 20 minutes"
+        except Exception as e:
+            return f"Error communicating with GPT Researcher: {str(e)}"
+    
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Book Summary API with GPT Researcher Deep Research",
+        "endpoint": "POST /generate-summary",
+        "parameters": ["book_name", "author", "publication_date"],
+        "response": "Text only - comprehensive book analysis"
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port) 
