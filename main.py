@@ -48,13 +48,17 @@ async def generate_summary(data: BookRequest):
         logger.info(f"🔗 Sending request to GPT Researcher for '{data.book_name}' by {data.author}")
         
         # Use the HTTP API endpoint
-        gpt_researcher_url = "http://localhost:8001/summarize"
+        gpt_researcher_url = "http://localhost:8001/report/"
         
-        # Prepare the request payload
+        # Prepare the request payload for GPT Researcher
         request_payload = {
-            "name": data.book_name,
-            "author": data.author,
-            "publication_date": data.publication_date
+            "task": f"Conduct a comprehensive deep research analysis of the book '{data.book_name}' by {data.author}, published on {data.publication_date}. Please provide a detailed summary of the book.",
+            "report_type": "detailed_report",
+            "report_source": "web",
+            "tone": "Objective",
+            "repo_name": "book-summary-api",
+            "branch_name": "main",
+            "generate_in_background": False
         }
         
         try:
@@ -68,7 +72,12 @@ async def generate_summary(data: BookRequest):
             if response.status_code == 200:
                 result = response.json()
                 logger.info(f"✅ Successfully generated research summary via GPT Researcher")
-                return result.get("summary", str(result))
+                
+                # Extract only the report content from the response
+                if "report" in result:
+                    return result["report"]
+                else:
+                    return str(result)
             else:
                 logger.error(f"❌ GPT Researcher returned status {response.status_code}")
                 return f"Error from GPT Researcher: HTTP {response.status_code}"
@@ -85,12 +94,7 @@ async def generate_summary(data: BookRequest):
 
 @app.get("/")
 async def root():
-    return {
-        "message": "Book Summary API with GPT Researcher Deep Research",
-        "endpoint": "POST /generate-summary",
-        "parameters": ["book_name", "author", "publication_date"],
-        "response": "Text only - comprehensive book analysis"
-    }
+    return "Book Summary API - POST /generate-summary with book_name, author, publication_date"
 
 if __name__ == "__main__":
     import uvicorn
