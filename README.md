@@ -18,6 +18,10 @@ This project provides a complete solution for generating detailed book analyses:
 3. **Deep Research**: GPT Researcher conducts comprehensive analysis
 4. **Results Display**: Returns detailed chapter-by-chapter summary with insights
 
+## RUN:
+cd book-summary-api && uvicorn main:app --reload
+cd book-summary-frontend && npm run dev
+
 ## 🏗️ Architecture
 
 ```
